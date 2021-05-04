@@ -1,211 +1,97 @@
-#include <ESP8266WiFi.h>
-#include <ESP8266WiFiMulti.h>
-#include <WebSocketsServer.h>
-#include <Hash.h>
-#include <ESP8266WebServer.h>
-#include <ESP8266mDNS.h>
+#include<ESP8266WiFi.h>
+#include<ESP8266WiFiMulti.h>
+#include<WebSocketsClient.h>
 
-#define USE_SERIAL Serial
+#define LEDPIN 2
+#define RELAYPIN 0
 
-static const char ssid[] = "Steve_2.4";
-static const char password[] = "qwqwqwqwq";
-MDNSResponder mdns;
+const char ssid[] = "Steve_2.4";
+const char password[] = "qwqwqwqwq";
+const char host[] = "remote-control.stevezheng.cf";
+const int remote_port = 443;
+const char remote_url[] = "/";
 
-static void writeLED(bool);
-
-ESP8266WiFiMulti WiFiMulti;
-
-ESP8266WebServer server(80);
-WebSocketsServer webSocket = WebSocketsServer(81);
-
-static const char PROGMEM INDEX_HTML[] = R"rawliteral(
-<!DOCTYPE html>
-<html>
-<head>
-<meta name = "viewport" content = "width = device-width, initial-scale = 1.0, maximum-scale = 1.0, user-scalable=0">
-<title>ESP8266 WebSocket Demo</title>
-<style>
-"body { background-color: #808080; font-family: Arial, Helvetica, Sans-Serif; Color: #000000; }"
-</style>
-<script>
-var websock;
-function start() {
-  websock = new WebSocket('ws://' + window.location.hostname + ':81/');
-  websock.onopen = function(evt) { console.log('websock open'); };
-  websock.onclose = function(evt) { console.log('websock close'); };
-  websock.onerror = function(evt) { console.log(evt); };
-  websock.onmessage = function(evt) {
-    console.log(evt);
-    var e = document.getElementById('ledstatus');
-    if (evt.data === 'ledon') {
-      e.style.color = 'red';
-    }
-    else if (evt.data === 'ledoff') {
-      e.style.color = 'black';
-    }
-    else {
-      console.log('unknown event');
-    }
-  };
-}
-function buttonclick(e) {
-  websock.send(e.id);
-}
-</script>
-</head>
-<body onload="javascript:start();">
-<h1>ESP8266 WebSocket Demo</h1>
-<div id="ledstatus"><b>LED</b></div>
-<button id="ledon"  type="button" onclick="buttonclick(this);">On</button> 
-<button id="ledoff" type="button" onclick="buttonclick(this);">Off</button>
-</body>
-</html>
-)rawliteral";
-
-// GPIO#0 is for Adafruit ESP8266 HUZZAH board. Your board LED might be on 13.
-const int LEDPIN = 0;
-// Current LED status
-bool LEDStatus;
-
-// Commands sent through Web Socket
 const char LEDON[] = "ledOn";
 const char LEDOFF[] = "ledOff";
 
-void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length)
-{
-  USE_SERIAL.printf("webSocketEvent(%d, %d, ...)\r\n", num, type);
-  switch (type) {
-  case WStype_DISCONNECTED:
-    USE_SERIAL.printf("[%u] Disconnected!\r\n", num);
-    break;
-  case WStype_CONNECTED:
-  {
-               IPAddress ip = webSocket.remoteIP(num);
-               USE_SERIAL.printf("[%u] Connected from %d.%d.%d.%d url: %s\r\n", num, ip[0], ip[1], ip[2], ip[3], payload);
-               // Send the current LED status
-               if (LEDStatus) {
-                 webSocket.sendTXT(num, LEDON, strlen(LEDON));
-               }
-               else {
-                 webSocket.sendTXT(num, LEDOFF, strlen(LEDOFF));
-               }
-  }
-    break;
-  case WStype_TEXT:
-    USE_SERIAL.printf("[%u] get Text: %s\r\n", num, payload);
+bool LEDStatus;
 
-    if (strcmp(LEDON, (const char *)payload) == 0) {
-      writeLED(true);
-    }
-    else if (strcmp(LEDOFF, (const char *)payload) == 0) {
-      writeLED(false);
-    }
-    else {
-      USE_SERIAL.println("Unknown command");
-    }
-    // send data to all connected clients
-    webSocket.broadcastTXT(payload, length);
-    break;
-  case WStype_BIN:
-    USE_SERIAL.printf("[%u] get binary length: %u\r\n", num, length);
-    hexdump(payload, length);
+WebSocketsClient webSocket;
+ESP8266WiFiMulti wifi_client;
 
-    // echo data back to browser
-    webSocket.sendBIN(num, payload, length);
-    break;
-  default:
-    USE_SERIAL.printf("Invalid WStype [%d]\r\n", type);
-    break;
+void webSocketEvent(WStype_t type, uint8_t * payload, size_t length){
+  switch(type) {
+    case WStype_DISCONNECTED:
+      Serial.printf("Disconnected!\n");
+      break;
+    case WStype_CONNECTED:
+      Serial.printf("Connected!\n");
+      if(LEDStatus){
+        webSocket.sendTXT(LEDON);
+      }
+      else{
+        webSocket.sendTXT(LEDOFF);
+      }
+      break;
+    case WStype_TEXT:
+      Serial.printf("Get text: %s\r\n",payload);
+      if (strcmp(LEDON, (const char *)payload) == 0) {
+        Serial.printf("On!\n");
+        writeLED(true);
+      }
+      else if (strcmp(LEDOFF, (const char *)payload) == 0) {
+        Serial.printf("Off!\n");
+        writeLED(false);
+      }
+      else {
+        Serial.println("Unknown command");
+      }
+      break;
+   default:
+      Serial.printf("Invalid WStype [%d]\r\n", type);
+      break;
   }
 }
 
-void handleRoot()
-{
-  server.send_P(200, "text/html", INDEX_HTML);
-}
-
-void handleNotFound()
-{
-  String message = "File Not Found\n\n";
-  message += "URI: ";
-  message += server.uri();
-  message += "\nMethod: ";
-  message += (server.method() == HTTP_GET) ? "GET" : "POST";
-  message += "\nArguments: ";
-  message += server.args();
-  message += "\n";
-  for (uint8_t i = 0; i<server.args(); i++){
-    message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
+void writeLED(bool state){
+  LEDStatus = state;
+  if(state){
+    digitalWrite(LEDPIN,0);
+    digitalWrite(RELAYPIN,0);
   }
-  server.send(404, "text/plain", message);
-}
-
-static void writeLED(bool LEDon)
-{
-  LEDStatus = LEDon;
-  // Note inverted logic for Adafruit HUZZAH board
-  if (LEDon) {
-    digitalWrite(LEDPIN, 0);
-  }
-  else {
-    digitalWrite(LEDPIN, 1);
+  else{
+    digitalWrite(LEDPIN,1);
+    digitalWrite(RELAYPIN,1);
   }
 }
 
-void setup()
-{
-  pinMode(LEDPIN, OUTPUT);
+void setup(){
+  pinMode(LEDPIN,OUTPUT);
+  pinMode(RELAYPIN,OUTPUT);
   writeLED(false);
-
-  USE_SERIAL.begin(115200);
-
-  //Serial.setDebugOutput(true);
-
-  USE_SERIAL.println();
-  USE_SERIAL.println();
-  USE_SERIAL.println();
-
-  for (uint8_t t = 4; t > 0; t--) {
-    USE_SERIAL.printf("[SETUP] BOOT WAIT %d...\r\n", t);
-    USE_SERIAL.flush();
+  Serial.begin(115200);
+  for(uint8_t t = 4; t > 0; t--) {
+    Serial.printf("[SETUP] BOOT WAIT %d...\n", t);
+    Serial.flush();
     delay(1000);
   }
-
-  WiFiMulti.addAP(ssid, password);
-
-  while (WiFiMulti.run() != WL_CONNECTED) {
+  
+  wifi_client.addAP(ssid,password);
+  while(wifi_client.run()!= WL_CONNECTED){
     Serial.print(".");
     delay(100);
   }
+  
+  Serial.println("");
+  Serial.print("Connected to ");
+  Serial.println(ssid);
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
 
-  USE_SERIAL.println("");
-  USE_SERIAL.print("Connected to ");
-  USE_SERIAL.println(ssid);
-  USE_SERIAL.print("IP address: ");
-  USE_SERIAL.println(WiFi.localIP());
-
-  if (mdns.begin("espWebSock", WiFi.localIP())) {
-    USE_SERIAL.println("MDNS responder started");
-    mdns.addService("http", "tcp", 80);
-    mdns.addService("ws", "tcp", 81);
-  }
-  else {
-    USE_SERIAL.println("MDNS.begin failed");
-  }
-  USE_SERIAL.print("Connect to http://espWebSock.local or http://");
-  USE_SERIAL.println(WiFi.localIP());
-
-  server.on("/", handleRoot);
-  server.onNotFound(handleNotFound);
-
-  server.begin();
-
-  webSocket.begin();
+  webSocket.beginSSL(host,remote_port,remote_url);
   webSocket.onEvent(webSocketEvent);
+  webSocket.setReconnectInterval(5000);
 }
-
-void loop()
-{
+void loop(){
   webSocket.loop();
-  server.handleClient();
 }
