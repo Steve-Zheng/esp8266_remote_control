@@ -91,6 +91,7 @@ void setup(){
   webSocket.beginSSL(host,remote_port,remote_url);
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(5000);
+  webSocket.enableHeartbeat(15000,3000,2);
 }
 void loop(){
   webSocket.loop();
