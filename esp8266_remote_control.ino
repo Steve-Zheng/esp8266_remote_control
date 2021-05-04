@@ -68,8 +68,8 @@ const int LEDPIN = 0;
 bool LEDStatus;
 
 // Commands sent through Web Socket
-const char LEDON[] = "ledon";
-const char LEDOFF[] = "ledoff";
+const char LEDON[] = "ledOn";
+const char LEDOFF[] = "ledOff";
 
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length)
 {
