@@ -68,7 +68,7 @@ void writeLED(bool state){
 void setup(){
   pinMode(LEDPIN,OUTPUT);
   pinMode(RELAYPIN,OUTPUT);
-  writeLED(false);
+  writeLED(true);
   Serial.begin(115200);
   for(uint8_t t = 4; t > 0; t--) {
     Serial.printf("[SETUP] BOOT WAIT %d...\n", t);
