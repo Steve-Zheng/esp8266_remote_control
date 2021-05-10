@@ -1,3 +1,6 @@
+//TODO: Remote configure WiFi, instead of hardcode SSID and password
+//TODO: Fix WPA2 Enterprise connectivity issue (e.g. eduroam and NTUSECURE)
+
 #include<ESP8266WiFi.h>
 #include<ESP8266WiFiMulti.h>
 #include<WebSocketsClient.h>
